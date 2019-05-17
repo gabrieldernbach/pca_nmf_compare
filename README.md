@@ -4,6 +4,8 @@
 import numpy as np
 import pylab as plt
 from sklearn.decomposition import PCA, NMF
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import OneHotEncoder
 
 def load_mnist(path, kind='train'):
     import os
@@ -31,6 +33,8 @@ def load_mnist(path, kind='train'):
 X,y = load_mnist('./fashionmnist/')
 ```
 
+# the dataset, we choose one class
+
 
 ```python
 c = 0 # choose one of the classes 0 to 9
@@ -56,8 +60,10 @@ plt.savefig(fname,dpi=300)
 ```
 
 
-![png](eigen_fashion_mnist_files/eigen_fashion_mnist_1_0.png)
+![png](eigen_fashion_mnist_files/eigen_fashion_mnist_2_0.png)
 
+
+# PCA decomposition
 
 
 ```python
@@ -90,11 +96,11 @@ print(f'reconstruction loss {np.linalg.norm(Xc - pca_reconstruction):.2f}' )
 ```
 
     variance explained 0.81
-    reconstruction loss 55916.24
+    reconstruction loss 55916.32
 
 
 
-![png](eigen_fashion_mnist_files/eigen_fashion_mnist_2_1.png)
+![png](eigen_fashion_mnist_files/eigen_fashion_mnist_4_1.png)
 
 
 
@@ -103,14 +109,15 @@ fig, axs = plt.subplots(6,3, figsize=(12,20), facecolor='w', edgecolor='k')
 axs = axs.ravel()
 
 for i in range(6):
-    orig = axs[i*3].imshow(Xc[i,:].reshape(llength,llength),cmap='gray')
+    orig = axs[i*3].imshow(Xcm[i,:].reshape(llength,llength),cmap='gray_r')
     axs[i*3].title.set_text(f'original'); axs[i*3].axis('off')
     
     encoding = axs[i*3+1].imshow(pca_encodings[i,:].reshape(5,5),cmap='RdGy');
     axs[i*3+1].title.set_text(f'encoding'); axs[i*3+1].axis('off')
     
-    reconstruction = axs[i*3+2].imshow((
-        pca_encodings[i,:] @ pca.components_).reshape(llength,llength),cmap='gray')
+    reconstruction = axs[i*3+2].imshow(
+        pca_reconstruction[i].reshape(llength,llength),
+        cmap='gray_r')
     axs[i*3+2].title.set_text(f'reconstruction'); axs[i*3+2].axis('off')
     
 fname = './images/pca_25_encoding_reconstruction.png'
@@ -118,8 +125,10 @@ plt.savefig(fname,dpi=300)
 ```
 
 
-![png](eigen_fashion_mnist_files/eigen_fashion_mnist_3_0.png)
+![png](eigen_fashion_mnist_files/eigen_fashion_mnist_5_0.png)
 
+
+# NMF decomposition
 
 
 ```python
@@ -155,11 +164,11 @@ plt.savefig(fname,dpi=300)
 print(nmf.reconstruction_err_)
 ```
 
-    59438.57380148931
+    59438.36562882681
 
 
 
-![png](eigen_fashion_mnist_files/eigen_fashion_mnist_4_1.png)
+![png](eigen_fashion_mnist_files/eigen_fashion_mnist_7_1.png)
 
 
 
@@ -183,5 +192,78 @@ plt.savefig(fname,dpi=300)
 ```
 
 
-![png](eigen_fashion_mnist_files/eigen_fashion_mnist_5_0.png)
+![png](eigen_fashion_mnist_files/eigen_fashion_mnist_8_0.png)
+
+
+# vector quantization by kmeans
+
+
+```python
+kmeans = KMeans(n_clusters = n_components,
+                init = 'k-means++',
+                n_jobs = -1)
+kmeans_encodings = kmeans.fit_predict(Xc)
+
+enc = OneHotEncoder(categories='auto')
+kmeans_encodings1H = enc.fit_transform(kmeans_encodings.reshape(-1,1)).todense()
+#import ipdb; ipdb.set_trace()
+kmeans_encodings1H = np.array(kmeans_encodings1H)
+
+kmeans_codebook = kmeans.cluster_centers_
+kmeans_reconstruction = kmeans_encodings1H @ kmeans_codebook
+
+fig, axs = plt.subplots(5,5, figsize=(15, 15), facecolor='w', edgecolor='k')
+axs = axs.ravel()
+
+vmin = np.min(kmeans_codebook)
+vmax = np.max(kmeans_codebook)
+for i in range(25):
+    im = axs[i].imshow(kmeans_codebook[i].reshape(28,28),cmap='RdGy',vmin=-vmax,vmax=vmax)
+    axs[i].set_title(str(i))
+    axs[i].axis('off')
+    
+fig.subplots_adjust(right=0.8)
+cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
+cbar = fig.colorbar(im, cax=cbar_ax, ticks=[-vmax, 0, vmax])
+cbar.ax.set_yticklabels(['-', '0', '+'],fontsize=10);
+
+fname = './images/kmeans_25_codebook.png'
+plt.savefig(fname,dpi=300)
+```
+
+
+![png](eigen_fashion_mnist_files/eigen_fashion_mnist_10_0.png)
+
+
+
+```python
+fig, axs = plt.subplots(6,3, figsize=(12,20), facecolor='w', edgecolor='k')
+axs = axs.ravel()
+
+vmin = np.min(Xc)
+vmax = np.max(Xc)
+for i in range(6):
+    orig = axs[i*3].imshow(Xc[i,:].reshape(llength,llength),
+                           cmap='gray_r',
+                           vmin=vmin, vmax=vmax)
+    axs[i*3].title.set_text(f'original'); axs[i*3].axis('off')
+    
+    encoding = axs[i*3+1].pcolor(
+                    np.flipud(kmeans_encodings1H[i].reshape(5,5)),
+                    edgecolors='k', linewidth=1,
+                    cmap = 'gray_r');
+    axs[i*3+1].axis('equal')
+    axs[i*3+1].title.set_text(f'encoding'); axs[i*3+1].axis('off')
+    
+    reco = axs[i*3+2].imshow(kmeans_reconstruction[i].reshape(llength,llength),
+                             cmap='gray_r',
+                             vmin=vmin, vmax=vmax)
+    axs[i*3+2].title.set_text(f'reconstruction'); axs[i*3+2].axis('off')
+    
+fname = './images/kmeans_25_encoding_reconstruction.png'
+plt.savefig(fname,dpi=300)
+```
+
+
+![png](eigen_fashion_mnist_files/eigen_fashion_mnist_11_0.png)
 
